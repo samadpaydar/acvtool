@@ -15,6 +15,8 @@ from instrumenting.apktool_interface import ApktoolInterface
 from instrumenting.smali_instrumenter import Instrumenter
 from instrumenting.utils import timeit
 from instrumenting.utils import Utils
+from os import listdir
+from os.path import join, isdir
 
 apk_info_pattern = re.compile("package: name='(?P<package>.*?)'")
 
@@ -172,6 +174,7 @@ def instrument_apk(apk_path, result_dir, dbg_start=None, dbg_end=None, installat
 
     instrument_manifest(manifest_path)
     smali_code_path = get_path_to_smali_code(unpacked_data_path)
+    integrate_all_smali_files(unpacked_data_path)
     pickle_path = get_pickle_path(apk_path, result_dir)
     instrument_smali_code(smali_code_path, pickle_path, package, granularity, dbg_start, dbg_end, mem_stats)
     logging.info("instrumented")
@@ -190,6 +193,35 @@ def instrument_apk(apk_path, result_dir, dbg_start=None, dbg_end=None, installat
     if installation:
         install(instrumented_apk_path)
     return (package, instrumented_apk_path, pickle_path)
+
+def integrate_all_smali_files(unpacked_data_path):
+    main_smali_folder = get_path_to_smali_code(unpacked_data_path)
+    folders = [f for f in listdir(unpacked_data_path) if isdir(join(unpacked_data_path, f))]
+    for folder in folders:
+        if folder.startswith('smali') and folder != 'smali':
+            src = join(unpacked_data_path, folder)
+            dest = main_smali_folder
+            logging.info("{} ==> {}".format(src, dest))
+            move(src, dest)
+
+def move(root_src_dir, root_dst_dir):
+    for src_dir, dirs, files in os.walk(root_src_dir):
+        dst_dir = src_dir.replace(root_src_dir, root_dst_dir, 1)
+        if not os.path.exists(dst_dir):
+            os.makedirs(dst_dir)
+        for file_ in files:
+            src_file = os.path.join(src_dir, file_)
+            dst_file = os.path.join(dst_dir, file_)
+            if os.path.exists(dst_file):
+                # in case of the src and dst are the same file
+                if os.path.samefile(src_file, dst_file):
+                    continue
+                os.remove(dst_file)
+            try:
+                shutil.move(src_file, dst_dir)
+            except:
+                logging.error("Failed to move {} to {}".format(src_file, dst_dir))
+
 
 def remove_if_exits(path):
     if os.path.exists(path):
